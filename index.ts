@@ -1,12 +1,13 @@
 import Discord from 'discord.js';
 import Chatbot from './chatbot';
+import a0l from './aol';
 import { CONFIG } from './charlies.config';
 import { log, chalk } from './logger';
 
 type TriggerResult = { success: true, value: any, haltTriggers: boolean, silent?: boolean  } | { success: false, error: string, haltTriggers: boolean, silent?: boolean }
 interface Trigger {
    command: RegExp | string;
-   action(...params: any): TriggerResult;
+   action(...params: any[]): TriggerResult;
 }
 
 const client = new Discord.Client();
@@ -32,7 +33,7 @@ client.on('disconnect', (event: CloseEvent)=> {
 });
 client.on('ready', () => {
    log(`Connected to Discord servers. Loading bot brain...`);
-   try {
+   try {      
       chatbot.loadBrain();
       log(`Bot brain loaded!`)
    } catch {
@@ -49,15 +50,16 @@ client.on('quit', () => {
    }
 });
 client.on('guildMemberUpdate', (oldMember: Discord.GuildMember, newMember: Discord.GuildMember) => {
-   if (oldMember.id === client.user.id || newMember.user.id === client.user.id) {
-      if (newMember.nickname !== chatbot.name) chatbot.name = newMember.nickname;               
-   }
+   if (oldMember.id !== client.user.id || newMember.user.id !== client.user.id) return;
+   if (newMember.hasPermission("MANAGE_NICKNAMES") && newMember.hasPermission("CHANGE_NICKNAME")) newMember.setNickname(chatbot.name);
+   
 });
 client.on('message', (message: Discord.Message) => {
    const msgText = message.cleanContent.normalize().replace(`<@${client.user.id}>`, client.user.username);
    const format = (timestamp, source, user, text) => `${timestamp} <${source}:${user}> ${text}`;
    const ownMessage = (message.author.id === client.user.id);
-      
+   if (ownMessage && message.member.nickname !== chatbot.name) message.guild.member(client.user).setNickname(chatbot.name);
+
    log(format(new Date(message.createdTimestamp).toLocaleTimeString(CONFIG.locale),
                chalk.green(message.channel.type === "text" ? message.guild.name : message.channel.type),
                ownMessage ? chalk.cyanBright(message.author.username): chalk.greenBright(message.author.username),
@@ -101,9 +103,9 @@ const Triggers: Trigger[] = [{
       return { success: true, value: null, haltTriggers: true };
    }
 }, {
-   command: /charlies talk to (.+)/i,
+   command: /charlies talk to (.+)/iu,
    action: (context: Discord.Message, matches: string[] = []) => {
-      let response: string, toUser: string, fromUser: string;
+      let response: string, toUser: string, fromUser: string, seed: string;
 
       fromUser = (context.member && context.member.nickname) ? context.member.nickname : context.author.username;
          
@@ -111,15 +113,17 @@ const Triggers: Trigger[] = [{
       
       toUser = matches[1];
       if (toUser.toLowerCase() === 'me') toUser = fromUser;        
+
+      seed = chatbot.brain.getSeedFromText();
    
-      response = getResponse(context, context.cleanContent.normalize(), fromUser, toUser, true);
+      response = getResponse(context, context.cleanContent.normalize(), fromUser, toUser, true, false, seed);
       if (!response) return { success: false, error: 'No response', haltTriggers: false }
 
       sendMessage(context, response, true);
       return { success: true, value: null, haltTriggers: true };
    }   
 }, {
-   command: /tell\s*(\S+)\s*a?\s*story(?:\s*about\s*)?(.*)?/i,
+   command: /tell\s*(\S+)\s*a?\s*story(?:\s*about\s*)?(.*)?/iu,
    action: (context: Discord.Message, matches: string[] = []) => {
       let fromUser: string, toUser: string, seed: string, story: string, storySeed: string;
       
@@ -145,15 +149,24 @@ const Triggers: Trigger[] = [{
 
       log(`Telling ${toUser} a story about ${seed}`, 'bot-message');
       for (let lineCounter = 0; lineCounter < storyLength; lineCounter++) {         
-         story = getResponse(context, storySeed, fromUser, toUser, true, true, seed);
+         story = getResponse(context, storySeed, fromUser, toUser, true, false, seed);
          if (!story) break;
          log(`Line ${lineCounter} (seed: ${seed}): ${story}`, 'bot-message');
          sendMessage(context, story, context.tts);
          
-         seed = chatbot.brain.getSeedFromText(storySeed);
+         seed = chatbot.brain.getSeedFromText(story);
          storySeed = chatbot.brain.getReply(seed);
       }
       return { success: true, value: null, haltTriggers: true };
+   }
+}, {
+   command: /^talk\s*(?:add|remove|delete)/i,
+   action: () => { return { success: true, value: null, haltTriggers: true } }
+}, {
+   command: /a0l/,
+   action: (context: Discord.Message) => {
+      sendMessage(context, a0l(), context.tts);      
+      return { success: true, value: null, haltTriggers: true }
    }
 }, {
    command: /.+/i,

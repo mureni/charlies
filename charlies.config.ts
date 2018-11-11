@@ -7,7 +7,7 @@ export const CONFIG = {
    generalLog: "./charlies-general.log",
    infoLogFormat: (info => `${info.timestamp} [${info.level}]: ${info.label} - ${info.message}`),
    bot: {
-      respondsTo: /charlies['s:]*\s*/i,
+      respondsTo: /charlie['s:]*\s*/i,
       name: 'charlies',
       brain: undefined,
       trainerFile: "./charlies.trn",
@@ -17,7 +17,7 @@ export const CONFIG = {
          responsiveness: 1,
          anger: 0.5,
          irritability: 1.1,
-         recursion: 1,
+         recursion: 2,
          calmdown: 2         
       }
    }

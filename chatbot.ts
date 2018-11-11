@@ -38,7 +38,7 @@ class Chatbot implements Chatbot {
          responsiveness: 1,
          anger: 0.5,
          irritability: 1.1,
-         recursion: 1,
+         recursion: 2,
          calmdown: 2
       },
       logger: Function = console.log
@@ -93,7 +93,8 @@ class Chatbot implements Chatbot {
      
       if (shouldReply) {
          for (let i = 0; i < recursion; i++) {            
-            response = this.brain.getReply(seed);            
+            response = this.brain.getReply(seed).trim();            
+            this.logger(`Iteration ${i}; Seed: ${seed}; Response: ${response}`);
             seed = this.brain.getSeedFromText(response);            
          }
       } else {
@@ -109,7 +110,7 @@ class Chatbot implements Chatbot {
       if (reply.toUpperCase() === reply) {
          this.settings.anger *= this.settings.irritability;
       } else {
-         this.settings.anger /= Math.max(0, this.settings.calmdown);
+         this.settings.anger /= Math.max(0.001, this.settings.calmdown);
       }
       if (this.settings.anger > Math.random()) reply = reply.toUpperCase();      
 
@@ -118,7 +119,7 @@ class Chatbot implements Chatbot {
       const punctuation = reply.match(/\.\?\!$/);
       if (punctuation) reply = reply.substring(0, [...reply].length - 1);
       const characters = [...reply];      
-      let curly = 0, square = 0, parenthesis = 0, doubleQuote = 0, angledQuote = 0;      
+      let curly = 0, square = 0, parenthesis = 0, doubleQuote = false, angledQuote = false;
       characters.forEach(char => {
          switch (char) {
             case "(": parenthesis++; break; 
@@ -127,8 +128,8 @@ class Chatbot implements Chatbot {
             case "]": square--; break;
             case "{": curly++; break;
             case "}": curly--; break;
-            case "\"": if ((doubleQuote++ % 2) == 0) doubleQuote--; break;
-            case "`": if ((angledQuote++ % 2) == 0) angledQuote--; break;
+            case "\"": doubleQuote = !doubleQuote; break;
+            case "`": angledQuote = !angledQuote; break;
             default: break;
          }
       });
@@ -141,7 +142,7 @@ class Chatbot implements Chatbot {
       if (doubleQuote) reply = reply.concat("\"");
       if (angledQuote) reply = reply.concat("`");
       if (punctuation) reply = reply.concat(punctuation[0]);
-      return reply.replace(/^[^\[\(\{\'\"\`\w]/, '') + '\n';
+      return reply.replace(/^[^\[\(\{\'\"\`\S]/, '') + '\n';
    }
 }
 export default Chatbot;

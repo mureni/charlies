@@ -1,3 +1,4 @@
+const SURPRISE_THRESHOLD = 0;
 const MAX_STACK_SIZE = 128;
 const CHAR_JOINER = '│';
 interface nGram {
@@ -9,7 +10,7 @@ interface nGram {
 }
 interface Token {
    frequency: number;
-   ngrams: nGram[];
+   ngrams: string[];
 }
 export default class MarkovChain {
    chainLength: number;
@@ -45,7 +46,29 @@ export default class MarkovChain {
       this.previousTokenSet = {};
 
    }
+   chooseSurprisingWord(wordArray: string[] = []): string {
+      if (wordArray.length === 0) return "";
+      
+      let mostSurprising: number, surprise: number, seed: string, weighted: { [word: string]: number };
+      weighted = {};
+      wordArray.forEach(token => weighted[token] = (this.lexicon && this.lexicon[token]) ? this.lexicon[token].frequency : 0);
+
+      seed = wordArray[0];
+      mostSurprising = -65536;
+      wordArray.forEach(token => {
+         surprise = MarkovChain.surprise(weighted, token);
+         if (surprise > mostSurprising) {
+            mostSurprising = surprise;
+            seed = token;
+         }
+      });
+      if (mostSurprising < SURPRISE_THRESHOLD) seed = MarkovChain.choose(wordArray);
+      return seed;
+   }
    serialize(): string {
+      for (let key in this.lexicon) {
+         this.lexicon[key].ngrams = this.lexicon[key].ngrams.filter((item, index) => this.lexicon[key].ngrams.indexOf(item) >= index);
+      }
       return JSON.stringify([this.lexicon, this.nGramMap, this.nextTokenSet, this.previousTokenSet, this.chainLength]);      
    }
    deserialize(serialized: string): void {
@@ -53,11 +76,19 @@ export default class MarkovChain {
    }
    addNGram(ngram: nGram): void {      
       if (!this.nGramMap[ngram.hash]) {
-         ngram.frequency = 1;
-         this.nGramMap[ngram.hash] = ngram;
+         this.nGramMap[ngram.hash] = {...ngram, frequency: 1 };
       } else {
-         ngram.frequency = ++this.nGramMap[ngram.hash].frequency;
+         this.nGramMap[ngram.hash].frequency++;
       }
+   }
+   deleteWord(word: string): void {
+      if (!this.lexicon[word] || !this.nGramMap) return;
+
+      Object.keys(this.nGramMap).map(hashKey => {
+         if (this.nGramMap[hashKey].hash.includes(word)) delete this.nGramMap[hashKey];
+      });
+
+      delete this.lexicon[word];
    }
    learn(text: string = ""): string[] {
       if (!text) return [];      
@@ -89,11 +120,11 @@ export default class MarkovChain {
                if (!this.lexicon[token] || !this.lexicon[token].ngrams) {
                   this.lexicon[token] = {
                      frequency: 1,
-                     ngrams: [newNGram]
+                     ngrams: [newNGram.hash]
                   }
                } else {
                   this.lexicon[token].frequency++;
-                  this.lexicon[token].ngrams.push(newNGram);
+                  this.lexicon[token].ngrams.push(newNGram.hash);
                }               
             }
 
@@ -143,23 +174,24 @@ export default class MarkovChain {
       if (!text) return MarkovChain.choose(Object.keys(this.lexicon));
 
       let surprise: number, mostSurprising: number, seed: string, tokens: string[], weighted: { [key: string]: number };
-
+      
       tokens = MarkovChain.tokenize(text.normalize());
-      if (tokens.length === 0) return MarkovChain.choose(Object.keys(this.lexicon));;
+      if (tokens.length === 0) return MarkovChain.choose(Object.keys(this.lexicon));
       
       seed = MarkovChain.choose(tokens);
+      
       weighted = {};
-
       tokens.forEach(token => weighted[token] = (this.lexicon && this.lexicon[token]) ? this.lexicon[token].frequency : 0);
 
-      mostSurprising = 0;
+      mostSurprising = -65536;
       tokens.forEach(token => {
          surprise = MarkovChain.surprise(weighted, token);
          if (surprise > mostSurprising) {
-            mostSurprising = Math.pow(surprise, 2);
+            mostSurprising = surprise;
             seed = token;
          }
       });
+      if (mostSurprising < SURPRISE_THRESHOLD) return MarkovChain.choose(Object.keys(this.lexicon));
       return seed;
    }
 
@@ -181,7 +213,7 @@ export default class MarkovChain {
          }
          seedNGrams = Object.keys(this.nGramMap);
       } else {
-         seedNGrams = this.lexicon[seedWord].ngrams.map(ngram => ngram.hash);         
+         seedNGrams = this.lexicon[seedWord].ngrams;
       }
       if (seedNGrams.length === 0) return defaultReply;
       
@@ -195,8 +227,9 @@ export default class MarkovChain {
          nextTokens = this.nextTokenSet[currentNGram.hash];         
          if (!nextTokens) break;
                   
-         const nextToken = MarkovChain.choose(nextTokens);
+         const nextToken = this.chooseSurprisingWord(nextTokens);
          if (!nextToken || !this.lexicon[nextToken]) break;
+
 
          const newTokenSet: string[] = currentNGram.tokens.slice(1, this.chainLength);
          newTokenSet.push(nextToken);         
@@ -210,7 +243,7 @@ export default class MarkovChain {
          };         
          this.addNGram(newNGram);
                    
-         currentNGram = this.nGramMap[newNGram.hash];         
+         currentNGram = this.nGramMap[newNGram.hash];
          reply.push(nextToken);
       }
       
@@ -220,7 +253,7 @@ export default class MarkovChain {
          prevTokens = this.previousTokenSet[currentNGram.hash];
          if (!prevTokens) break;
          
-         const previousToken = MarkovChain.choose(prevTokens);
+         const previousToken = this.chooseSurprisingWord(prevTokens);
          if (!previousToken || !this.lexicon[previousToken]) break;
 
          const newTokenSet: string[] = currentNGram.tokens.slice(0, this.chainLength - 1);
