@@ -7,18 +7,20 @@ export const CONFIG = {
    generalLog: "./charlies-general.log",
    infoLogFormat: (info => `${info.timestamp} [${info.level}]: ${info.label} - ${info.message}`),
    bot: {
-      respondsTo: /charlie['s:]*\s*/i,
+      respondsTo: /charlie['s:]*\s*/ui,
       name: 'charlies',
       brain: undefined,
       trainerFile: "./charlies.trn",
       brainFile: "./charlies.brn",
       settings: {         
-         outburst: 0.015,
+         outburst: 0.005,
          responsiveness: 1,
          anger: 0.5,
-         irritability: 1.1,
-         recursion: 2,
-         calmdown: 2         
+         irritability: 1.2,
+         recursion: 1,
+         calmdown: 1.5,
+         conversationTimeLimit: 3,
+         conversationMemoryLength: 600,
       }
    }
 }

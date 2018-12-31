@@ -4,6 +4,7 @@
 *.trn
 .secret-stuff.ts
 .notes/
+brain-backup/
 
 # Logs
 logs

@@ -20,7 +20,7 @@ rl.on('line', (line: string) => {
    if (/^\![exit|quit]/i.test(input)) {
       rl.close();
    }
-   let reply: string = bot.parseInput(input, true);
+   let reply: string = bot.processInput(input, true);
    if (reply !== '') console.log(chalk.blue('- ') + chalk.blueBright(reply));
    rl.prompt();
 })

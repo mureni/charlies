@@ -1,0 +1,7 @@
+// Insert your Discord token here
+const token = "-----------------------------------------------------------";
+export default token;
+
+// To invite the bot, replace the XXXXXXXXXX below with your client id number
+// from discordapp.com/developer and provide the full URL to an authorized user:
+// https://discordapp.com/oauth2/authorize?client_id=XXXXXXXXX&scope=bot&permissions=284736

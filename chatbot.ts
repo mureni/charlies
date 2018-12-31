@@ -7,6 +7,8 @@ interface ChatbotSettings {
    irritability: number;
    recursion: number;
    calmdown: number;
+   conversationTimeLimit: number;
+   conversationMemoryLength: number;
 }
 interface Chatbot {
    respondsTo: RegExp;
@@ -19,7 +21,7 @@ interface Chatbot {
    loadTrainer(file: string): void;
    loadBrain(file: string): void;
    saveBrain(file: string): void;
-   parseInput(
+   processInput(
       input: string,
       forceRespond?: boolean,
       forceSeed?: string,
@@ -39,7 +41,9 @@ class Chatbot implements Chatbot {
          anger: 0.5,
          irritability: 1.1,
          recursion: 2,
-         calmdown: 2
+         calmdown: 2,
+         conversationTimeLimit: 5,
+         conversationMemoryLength: 600,
       },
       logger: Function = console.log
    ) {
@@ -52,97 +56,126 @@ class Chatbot implements Chatbot {
       this.logger = logger;
    }
    loadTrainer(file: string = this.trainerFile): void {
-      if (fs.existsSync(file)) {
-         this.logger(`Loading trainer ${file}`);
-         const trainerData: string = fs.readFileSync(file, 'utf8');
-         this.brain.learn(trainerData.toLowerCase());
+      try {
+         this.logger(`Loading trainer ${file}`, 'bot-message');
+         if (fs.existsSync(file)) {         
+            const trainerData: string = fs.readFileSync(file, 'utf8');
+            this.brain.learn(trainerData.toLowerCase());
+         } else {
+            this.logger(`Trainer file ${file} not found. Brain is empty.`);
+         }
+      } catch (err) {
+         this.logger(`Error loading trainer file ${file}: ${err}`);
       }
       return;
    }
 
    loadBrain(file: string = this.brainFile): void {
-      if (fs.existsSync(file)) {         
-         this.brain.deserialize(fs.readFileSync(file, 'utf8'));
-      } else {
-         this.loadTrainer();
+      try {
+         this.logger(`Loading brain file ${file}`, 'bot-message');
+         if (fs.existsSync(file)) {         
+            this.brain.deserialize(fs.readFileSync(file, 'utf8'));
+         } else {
+            this.logger(`Brain file ${file} not found. Attempting to load trainer.`);
+            this.loadTrainer();
+         }
+         this.logger(`Brain file ${file} loaded successfully`, 'bot-message');
+      } catch (err) {
+         this.logger(`Error loading brain file ${file}: ${err}`, 'error');
+         if (process.env.NODE_ENV === "development") throw new Error(err);
       }
       return;
    }
 
-   saveBrain(file: string = this.brainFile): void {
-      fs.writeFileSync(file, this.brain.serialize(), 'utf8');
+   saveBrain(file: string = this.brainFile): void {      
+      try {
+         this.logger(`Saving brain ${file}`, 'bot-message');
+         fs.writeFileSync(file, this.brain.serialize(), 'utf8');
+         this.logger(`Brain file ${file} saved successfully`, 'bot-message');
+      } catch (err) {
+         this.logger(`Error saving brain file ${file}: ${err}`, 'error');
+      }
       return;
    }
-   parseInput(
+   normalizeInput(input: string = ""): string {
+      if (!input) return "";
+      if (input.toUpperCase() === input) {
+         this.settings.anger *= this.settings.irritability;
+      } else {
+         this.settings.anger = Math.max(0.0001, this.settings.anger / Math.max(0.0001, this.settings.calmdown));
+      }
+      return this.balance(input.normalize().replace(this.respondsTo, "").replace(this.name, "my friend"));
+   }
+   processInput(
       input: string = "",
-      forceRespond: boolean = false,
+      shouldReply: boolean = false,
       seed: string = "",
       recursion: number = this.settings.recursion      
    ): string {
       // Read the input, learn it, and reply if appropriate
-      let response: string, wasMentioned: boolean, shouldReply: boolean, shouldOutburst: boolean;
+      let response: string = "", wasMentioned: boolean, shouldOutburst: boolean;
       if (!input) return "";
                   
-      response = input.normalize().replace(this.respondsTo, "");
-      this.brain.learn(response);      
-      if (!seed) seed = this.brain.getSeedFromText(response);
+      input = this.normalizeInput(input);
+      this.brain.learn(input);
+      if (!seed) seed = this.brain.getSeedFromText(input);
 
       wasMentioned = input.match(this.respondsTo) !== null;
       shouldOutburst = (this.settings.outburst > Math.random()) || (this.settings.anger > Math.random());
-      shouldReply = forceRespond || wasMentioned || shouldOutburst;
+      shouldReply = shouldReply || wasMentioned || shouldOutburst;
      
       if (shouldReply) {
          for (let i = 0; i < recursion; i++) {            
             response = this.brain.getReply(seed).trim();            
-            this.logger(`Iteration ${i}; Seed: ${seed}; Response: ${response}`);
+            this.logger(`Iteration ${i}; Seed: ${seed}; Raw Sentence: ${response}`, 'bot-message');
             seed = this.brain.getSeedFromText(response);            
          }
-      } else {
-         response = "";
       }      
-      return this.processReply(response);
+      return this.normalizeReply(response);
    }
 
-   processReply(reply: string = ""): string {
-      if (reply === "") return "";
-      reply = reply.normalize();
+   normalizeReply(normalizedReply: string = ""): string {
+      if (!normalizedReply) return "";
+      normalizedReply = normalizedReply.normalize();
       // Apply settings modifiers
-      if (reply.toUpperCase() === reply) {
-         this.settings.anger *= this.settings.irritability;
-      } else {
-         this.settings.anger /= Math.max(0.001, this.settings.calmdown);
-      }
-      if (this.settings.anger > Math.random()) reply = reply.toUpperCase();      
+      if (this.settings.anger > Math.random()) normalizedReply = normalizedReply.toUpperCase();      
+      
+      return this.balance(normalizedReply.trim());
+   }
 
-      reply = reply.trim();
+   balance(text: string = ""): string {
+      // Balances quotation marks
+      if (!text) return "";
+      let balancedText = text;
 
-      const punctuation = reply.match(/\.\?\!$/);
-      if (punctuation) reply = reply.substring(0, [...reply].length - 1);
-      const characters = [...reply];      
+      const punctuation = text.match(/\.\?\!$/);
+      if (punctuation) text = text.substring(0, [...text].length - 1);
+      const characters = [...text], pairedCharString = '()[]{}"`';
+      let pairedCharacters: { [char: string]: number } = {};
+      [...pairedCharString].map(char => pairedCharacters[char] = 0);
+
       let curly = 0, square = 0, parenthesis = 0, doubleQuote = false, angledQuote = false;
       characters.forEach(char => {
-         switch (char) {
-            case "(": parenthesis++; break; 
-            case ")": parenthesis--; break;
-            case "[": square++; break;
-            case "]": square--; break;
-            case "{": curly++; break;
-            case "}": curly--; break;
-            case "\"": doubleQuote = !doubleQuote; break;
-            case "`": angledQuote = !angledQuote; break;
-            default: break;
+         for (let findChar of pairedCharString) {
+            if (char === findChar) pairedCharacters[findChar]++
          }
       });
-      if (parenthesis < 0) reply = "(".repeat(-parenthesis).concat(reply);
-      if (parenthesis > 0) reply = reply.concat(")".repeat(parenthesis));
-      if (square < 0) reply = "[".repeat(-square).concat(reply);
-      if (square > 0) reply = reply.concat("]".repeat(square));
-      if (curly < 0) reply = "{".repeat(-curly).concat(reply);
-      if (curly > 0) reply = reply.concat("}".repeat(curly));
-      if (doubleQuote) reply = reply.concat("\"");
-      if (angledQuote) reply = reply.concat("`");
-      if (punctuation) reply = reply.concat(punctuation[0]);
-      return reply.replace(/^[^\[\(\{\'\"\`\S]/, '') + '\n';
+      parenthesis = pairedCharacters[')'] - pairedCharacters['('];
+      square = pairedCharacters[']'] - pairedCharacters['[']; 
+      curly = pairedCharacters['}'] - pairedCharacters['{'];
+      doubleQuote = (pairedCharacters['"'] % 2)  === 1;
+      angledQuote = (pairedCharacters['`'] % 2) === 1;
+
+      if (parenthesis < 0) balancedText = '('.repeat(-parenthesis).concat(balancedText);
+      if (parenthesis > 0) balancedText = balancedText.concat(')'.repeat(parenthesis));
+      if (square < 0) balancedText = '['.repeat(-square).concat(balancedText);
+      if (square > 0) balancedText = balancedText.concat(']'.repeat(square));
+      if (curly < 0) balancedText = '{'.repeat(-curly).concat(balancedText);
+      if (curly > 0) balancedText = balancedText.concat('}'.repeat(curly));
+      if (doubleQuote) balancedText = balancedText.concat('"');
+      if (angledQuote) balancedText = balancedText.concat('`');
+      if (punctuation) balancedText = balancedText.concat(punctuation[0]);
+      return balancedText.replace(/^[^\[\(\{\"\`\S]/, '') + '\n';      
    }
 }
 export default Chatbot;

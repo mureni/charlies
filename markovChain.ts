@@ -1,4 +1,3 @@
-const SURPRISE_THRESHOLD = 0;
 const MAX_STACK_SIZE = 128;
 const CHAR_JOINER = '│';
 interface nGram {
@@ -22,8 +21,8 @@ export default class MarkovChain {
    static wordRegex: RegExp = /\s+/u;
    static sentenceRegEx: RegExp = /\n/u;
    static tokenize(text: string = ""): string[] {
-      if (!text) return [];
-      const results = text.normalize().trim().split(MarkovChain.wordRegex);
+      if (!text || text.search(/[^\u0001-\u0010]+/gu)) return [];
+      const results = text.normalize().trim().split(MarkovChain.wordRegex);      
       return results;
    }
    static choose(array: string[] = []): string {
@@ -31,7 +30,7 @@ export default class MarkovChain {
       if (l === 0) return "";
       return array[Math.floor(Math.random() * l)];
    }
-   static surprise(wordWeights: { [key: string]: number } = {}, word: string = "") {
+   static calculateWordSurprise(wordWeights: { [key: string]: number } = {}, word: string = "") {
       // returns how likely it is to find 'word' in 'wordWeights' (assuming a key/value pair where wordWeights[word] = weight)
       if (!word || !wordWeights) return 0;      
       const values = Object.keys(wordWeights).map(key => wordWeights[key]);
@@ -45,25 +44,6 @@ export default class MarkovChain {
       this.nextTokenSet = {};
       this.previousTokenSet = {};
 
-   }
-   chooseSurprisingWord(wordArray: string[] = []): string {
-      if (wordArray.length === 0) return "";
-      
-      let mostSurprising: number, surprise: number, seed: string, weighted: { [word: string]: number };
-      weighted = {};
-      wordArray.forEach(token => weighted[token] = (this.lexicon && this.lexicon[token]) ? this.lexicon[token].frequency : 0);
-
-      seed = wordArray[0];
-      mostSurprising = -65536;
-      wordArray.forEach(token => {
-         surprise = MarkovChain.surprise(weighted, token);
-         if (surprise > mostSurprising) {
-            mostSurprising = surprise;
-            seed = token;
-         }
-      });
-      if (mostSurprising < SURPRISE_THRESHOLD) seed = MarkovChain.choose(wordArray);
-      return seed;
    }
    serialize(): string {
       for (let key in this.lexicon) {
@@ -80,15 +60,6 @@ export default class MarkovChain {
       } else {
          this.nGramMap[ngram.hash].frequency++;
       }
-   }
-   deleteWord(word: string): void {
-      if (!this.lexicon[word] || !this.nGramMap) return;
-
-      Object.keys(this.nGramMap).map(hashKey => {
-         if (this.nGramMap[hashKey].hash.includes(word)) delete this.nGramMap[hashKey];
-      });
-
-      delete this.lexicon[word];
    }
    learn(text: string = ""): string[] {
       if (!text) return [];      
@@ -148,56 +119,17 @@ export default class MarkovChain {
       }
       return results;
    }
-   rankNGrams(ngrams: nGram[] = [], findWords: string[] = []): nGram[] {
-      // Returns intersection of ngrams[] and findWords[] sorted by total word frequency (0 = rarest; may have multiple 0 weight entries)
-      if (ngrams.length === 0 || findWords.length === 0) return [];
 
-      let highestFrequency: number, rankedNGrams: nGram[];
-      const foundWords = ngrams.filter(ngram => findWords.indexOf(ngram.tokens[this.chainLength - 1]) !== -1);
-
-      if (!foundWords || foundWords.length === 0) return [];
-
-      highestFrequency = 0;
-      rankedNGrams = [];
-
-      foundWords.map(ngram => {
-         let combinedFrequency = 0;
-         ngram.tokens.forEach(token => combinedFrequency += this.getWordFrequency(token));
-         if (combinedFrequency >= highestFrequency) {
-            highestFrequency = combinedFrequency;
-            rankedNGrams.push(ngram);
-         }
-      });
-      return rankedNGrams;
-   }
    getSeedFromText(text: string = ""): string {      
       if (!text) return MarkovChain.choose(Object.keys(this.lexicon));
 
-      let surprise: number, mostSurprising: number, seed: string, tokens: string[], weighted: { [key: string]: number };
+      let seed: string, tokens: string[];
       
       tokens = MarkovChain.tokenize(text.normalize());
       if (tokens.length === 0) return MarkovChain.choose(Object.keys(this.lexicon));
       
       seed = MarkovChain.choose(tokens);
-      
-      weighted = {};
-      tokens.forEach(token => weighted[token] = (this.lexicon && this.lexicon[token]) ? this.lexicon[token].frequency : 0);
-
-      mostSurprising = -65536;
-      tokens.forEach(token => {
-         surprise = MarkovChain.surprise(weighted, token);
-         if (surprise > mostSurprising) {
-            mostSurprising = surprise;
-            seed = token;
-         }
-      });
-      if (mostSurprising < SURPRISE_THRESHOLD) return MarkovChain.choose(Object.keys(this.lexicon));
       return seed;
-   }
-
-   getWordFrequency(word: string): number {
-      if (!this.lexicon || !this.lexicon[word]) return 0;
-      return this.lexicon[word].frequency;
    }
    getReply(seedWord: string = "", defaultReply: string = ""): string {      
       let stackCounter: number;
@@ -227,7 +159,7 @@ export default class MarkovChain {
          nextTokens = this.nextTokenSet[currentNGram.hash];         
          if (!nextTokens) break;
                   
-         const nextToken = this.chooseSurprisingWord(nextTokens);
+         const nextToken = MarkovChain.choose(nextTokens);
          if (!nextToken || !this.lexicon[nextToken]) break;
 
 
@@ -253,7 +185,7 @@ export default class MarkovChain {
          prevTokens = this.previousTokenSet[currentNGram.hash];
          if (!prevTokens) break;
          
-         const previousToken = this.chooseSurprisingWord(prevTokens);
+         const previousToken = MarkovChain.choose(prevTokens); 
          if (!previousToken || !this.lexicon[previousToken]) break;
 
          const newTokenSet: string[] = currentNGram.tokens.slice(0, this.chainLength - 1);
