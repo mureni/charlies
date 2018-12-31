@@ -63,7 +63,7 @@ class DiscordBot {
       });
       
       this.client.on('guildMemberUpdate', this.reclaimNick.bind(this));
-      this.client.on('message', this.processMessage.bind(this));
+      this.client.on('message', this.processMessageByContext.bind(this));
       
       this.triggers = this.loadTriggers();
       this.dirtyBrain = false;
@@ -95,16 +95,16 @@ class DiscordBot {
       if (oldMember.id !== this.client.user.id || newMember.user.id !== this.client.user.id) return;
       if (newMember.hasPermission("MANAGE_NICKNAMES") && newMember.hasPermission("CHANGE_NICKNAME")) newMember.setNickname(this.chatbot.name);               
    }
-   processMessage(message: Discord.Message) {
-      let msgText = message.content.replace(`<@${this.client.user.id}>`, this.client.user.username);
+   processMessageByContext(context: Discord.Message) {
+      let msgText = this.interpolateUsers(context, context.content);
       msgText = msgText.replace(/\s+/gu, ' ');
       const format = (timestamp, source, user, text) => `${timestamp} <${source}:${user}> ${text}`;
-      const ownMessage = (message.author.id === this.client.user.id);
-      if (ownMessage && message.member.nickname !== this.chatbot.name) message.guild.member(this.client.user).setNickname(this.chatbot.name);
+      const ownMessage = (context.author.id === this.client.user.id);
+      if (ownMessage && context.member.nickname !== this.chatbot.name) context.guild.member(this.client.user).setNickname(this.chatbot.name);
 
-      log(format(new Date(message.createdTimestamp).toLocaleTimeString(CONFIG.locale),
-                  chalk.green(message.channel.type === "text" ? message.guild.name : message.channel.type),
-                  ownMessage ? chalk.cyanBright(message.author.username): chalk.greenBright(message.author.username),
+      log(format(new Date(context.createdTimestamp).toLocaleTimeString(CONFIG.locale),
+                  chalk.green(context.channel.type === "text" ? context.guild.name : context.channel.type),
+                  ownMessage ? chalk.cyanBright(context.author.username): chalk.greenBright(context.author.username),
                   chalk.blueBright(msgText)
       ));
 
@@ -117,7 +117,7 @@ class DiscordBot {
             const matches: RegExpMatchArray | null = msgText.match(trigger.command);
             
             if (!halt && matches) {
-               const result = trigger.action(message, matches);
+               const result = trigger.action(context, matches);
                if (result.success && result.value) {
                   log(`Trigger ${trigger.command} executed. Result: ${result.value}`, 'info');
                } else if (!result.success && result.error) {
