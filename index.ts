@@ -100,7 +100,7 @@ class DiscordBot {
       msgText = msgText.replace(/\s+/gu, ' ');
       const format = (timestamp, source, user, text) => `${timestamp} <${source}:${user}> ${text}`;
       const ownMessage = (context.author.id === this.client.user.id);
-      if (ownMessage && context.member.nickname !== this.chatbot.name) context.guild.member(this.client.user).setNickname(this.chatbot.name);
+      if (ownMessage && context.member && context.member.nickname !== this.chatbot.name) context.guild.member(this.client.user).setNickname(this.chatbot.name);
 
       log(format(new Date(context.createdTimestamp).toLocaleTimeString(CONFIG.locale),
                   chalk.green(context.channel.type === "text" ? context.guild.name : context.channel.type),
@@ -180,7 +180,7 @@ class DiscordBot {
             return { success: true, value: null, haltTriggers: true };
          }
       }, {
-         command: /^charlies talk to (?<person>.+)(?: about (?<topic>.+))?/iu,
+         command: /chat(?: with (?<person>.+))?(?: about (?<topic>.+)){1,}/iu,
          action: (context: Discord.Message, matches: RegExpMatchArray = []) => {
             let response: string, toUser: string, fromUser: string, seed: string;
       
@@ -210,8 +210,7 @@ class DiscordBot {
       
             fromUser = this.getUserFromContext(context);         
             toUser = ((matches.groups && matches.groups.person) ? matches.groups.person.trim() : '').toLowerCase();
-      
-            if (toUser === 'me') toUser = fromUser;
+            if (toUser === 'me') toUser = fromUser;  
       
             if (matches.groups && matches.groups.long) storyLength *= 3;
             seed = (matches.groups && matches.groups.topic) ? this.chatbot.brain.getSeedFromText(matches.groups.topic.trim()) : this.chatbot.brain.getSeedFromText();
