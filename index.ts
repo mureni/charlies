@@ -1,6 +1,7 @@
 import Discord from 'discord.js';
 import Chatbot from './chatbot';
 import a0l from './aol';
+import getTarotHand from './tarot';
 import { CONFIG } from './charlies.config';
 import { log, chalk } from './logger';
 
@@ -165,10 +166,19 @@ class DiscordBot {
       if (!message) return;
       context.channel.send(message, { tts: tts }).catch(reason => log(`Unable to send message: ${reason}`, 'info'));
    }
-  
-
    loadTriggers(): Trigger[] {
-      return [{    
+      return [{
+         command: /^!tarot/i,
+         action: (context: Discord.Message) => {
+            getTarotHand().then(image => {
+               log(`Sending tarot reading of ${image.byteLength} bytes`);
+               let tarot = new Discord.Attachment(image);
+               context.channel.send(tarot)
+                              .catch(reason => log(`Unable to send message: ${reason}`, 'info'));
+            });            
+            return { success: true, value: null, haltTriggers: true };
+         }
+      }, {
          command: /^!save/i,
          action: (context: Discord.Message) => {
             if (this.dirtyBrain) {
@@ -178,6 +188,12 @@ class DiscordBot {
                this.sendMessage(context, `no`);
             }
             return { success: true, value: null, haltTriggers: true };
+         }
+      }, {
+         command: /^a0l$/i,
+         action: (context: Discord.Message) => {
+            this.sendMessage(context, a0l(), context.tts);      
+            return { success: true, value: null, haltTriggers: true }
          }
       }, {
          command: /chat(?: with (?<person>.+))?(?: about (?<topic>.+)){1,}/iu,
@@ -269,12 +285,6 @@ class DiscordBot {
          command: /^show conversations/iu,
          action: (context: Discord.Message) => {
             this.sendMessage(context, `\`\`\`json\n${JSON.stringify(this.conversations, null, 2)}\`\`\``, false);
-            return { success: true, value: null, haltTriggers: true }
-         }
-      }, {
-         command: /^a0l$/i,
-         action: (context: Discord.Message) => {
-            this.sendMessage(context, a0l(), context.tts);      
             return { success: true, value: null, haltTriggers: true }
          }
       }, {
