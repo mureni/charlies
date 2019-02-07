@@ -179,6 +179,53 @@ class DiscordBot {
             return { success: true, value: null, haltTriggers: true };
          }
       }, {
+         command: /^!learn-history ?(?<channelID>.+)?/iu,
+         action: (context: Discord.Message, matches: RegExpMatchArray = []) => {
+            let channelID = ((matches.groups && matches.groups.channelID) ? matches.groups.channelID.trim() : '');
+            if (!channelID) channelID = context.channel.id;
+            let possibleChannels = context.guild.channels.filter(chan => chan.type === 'text');
+            let channel: Discord.GuildChannel | undefined = possibleChannels.get(channelID);
+            if (!channel || channel.type !== 'text') {
+               this.sendMessage(context, `no that is not a real channel`);
+               return { success: false, error: 'invalid channel', haltTriggers: true };;
+            } 
+            
+            let perms = channel.permissionsFor(this.client.user);
+            if (!perms || !perms.has("READ_MESSAGE_HISTORY")) {
+               this.sendMessage(context, `not allowed to read message history`);
+               return { success: false, error: 'not allowed to read message history', haltTriggers: true };;
+            }                                   
+            let lineCount = 0, startTime = Date.now();
+            log(`Trying to learn from channel history: ${channel.name}`);
+
+            let getMessages = async () => {
+               let messageCount = 0, lastID = context.id;
+               do {
+                  log(`Fetching 100 messages at a time from channel ID ${channelID} starting at message ID ${lastID}`, 'info');
+                  let messages = await (channel as Discord.TextChannel).fetchMessages({ limit: 100, before: lastID });
+                  messageCount = messages.size;
+                  log(`Fetched ${messageCount} messages from channel ID ${channelID}`, 'info');
+                  messages.forEach(message => {
+                     
+                     let text: string = message.content.replace(new RegExp(`^\s*${this.chatbot.respondsTo.source}`, 'ui'), '').trim();
+                     text = text.replace(new RegExp(this.chatbot.name, 'uig'), 'my friend');
+                     if (message.content.toUpperCase() == message.content) text = text.toUpperCase();
+
+                     this.chatbot.brain.learn(text);
+                     lineCount++;
+                     lastID = message.id;
+                  });
+                  if (messageCount < 100) break;
+               } while (messageCount >= 1);
+               this.sendMessage(context, `learned ${lineCount} lines from channel ID ${channelID} (${(Date.now() - startTime) / 1000}s)`)
+            }
+            
+            getMessages();         
+
+            return { success: true, value: null, haltTriggers: true };
+            
+         }
+      }, {
          command: /^!save/i,
          action: (context: Discord.Message) => {
             if (this.dirtyBrain) {
@@ -279,7 +326,7 @@ class DiscordBot {
             return { success: true, value: null, haltTriggers: true };
          }
       }, {
-         command: /^talk (?:add|remove|delete|index)/i,
+         command: /^talk (?:shuffle|stats|add|remove|index)/i,
          action: () => { return { success: true, value: null, haltTriggers: true } }
       }, {
          command: /^show conversations/iu,

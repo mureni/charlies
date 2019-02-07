@@ -11,7 +11,7 @@ interface Card {
    imageData: sharp.Sharp;
 }
 
-const TAROT_DIR = path.join(__dirname, "tarot");
+const TAROT_DIR = path.join(__dirname, "rider-waite");
 
 async function getCards(directory: string = TAROT_DIR): Promise<Card[]> {
    let files: string[] = [];   
@@ -60,6 +60,7 @@ async function getHand(directory: string = TAROT_DIR) {
 
    for (let cardCount = 0; cardCount < readingLength; ++cardCount) {      
       const [ pulledCard ] = cards.splice(Math.floor(Math.random() * cards.length), 1);
+      if (Math.random() >= .5) pulledCard.imageData = await pulledCard.imageData.rotate(180);
       readCards.push(pulledCard);
    }
 
@@ -93,5 +94,10 @@ async function getReading(directory: string = TAROT_DIR) {
 }
 
 const getTarotHand = (cardSet: string = TAROT_DIR) => getReading(cardSet);
+const saveHandImage = async (filename: string = path.join(__dirname, "output.png")) => {
+   let image: Buffer = await getTarotHand();
+   sharp(image).toFile(filename);
+}
 
+export { saveHandImage };
 export default getTarotHand;
